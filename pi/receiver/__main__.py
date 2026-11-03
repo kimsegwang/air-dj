@@ -1,8 +1,7 @@
 """python -m receiver
 
 환경 변수 (.env.example 참고):
-    MQTT_HOST, MQTT_PORT, MQTT_TOPIC
-    PLAYER=log|mpv, MPV_SOCKET
+    MQTT_HOST, MQTT_PORT, MQTT_TOPIC, COMMANDS_TOPIC
     SUPABASE_URL, SUPABASE_SECRET_KEY (없으면 로그만 남긴다)
 """
 
@@ -14,7 +13,7 @@ import time
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
-from receiver.player import LogPlayer, MpvPlayer
+from receiver.commands import MqttCommandPublisher
 from receiver.service import Receiver
 from receiver.storage import BackgroundRepository, SafeRepository
 from receiver.supabase import SupabaseRepository
@@ -38,9 +37,7 @@ def main() -> None:
     host = os.environ.get("MQTT_HOST", "localhost")
     port = int(os.environ.get("MQTT_PORT", "1883"))
     topic = os.environ.get("MQTT_TOPIC", "air-dj/gesture")
-    player_kind = os.environ.get("PLAYER", "log")
-
-    player = MpvPlayer(os.environ.get("MPV_SOCKET", "/tmp/mpvsocket")) if player_kind == "mpv" else LogPlayer()
+    commands_topic = os.environ.get("COMMANDS_TOPIC", "air-dj/commands")
 
     supabase_url = os.environ.get("SUPABASE_URL", "")
     supabase_key = os.environ.get("SUPABASE_SECRET_KEY", "")
@@ -51,7 +48,9 @@ def main() -> None:
         inner = LogRepository()
         log.warning("storage: SUPABASE_URL/SUPABASE_SECRET_KEY 없음 → 로그만 남긴다")
     repo = BackgroundRepository(SafeRepository(inner))
-    receiver = Receiver(player, repo)
+
+    client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id="air-dj-receiver")
+    receiver = Receiver(MqttCommandPublisher(client, commands_topic), repo)
 
     def on_connect(client, userdata, flags, reason_code, properties):
         log.info("MQTT connected to %s:%d (%s), subscribing %s", host, port, reason_code, topic)
@@ -66,7 +65,6 @@ def main() -> None:
         except Exception:
             log.exception("메시지 처리 실패")  # 서비스는 계속 돈다
 
-    client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id="air-dj-receiver")
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
@@ -78,7 +76,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
-    log.info("player=%s, broker=%s:%d", player_kind, host, port)
+    log.info("broker=%s:%d, commands -> %s", host, port, commands_topic)
     client.connect_async(host, port)
     try:
         client.loop_forever(retry_first_connection=True)

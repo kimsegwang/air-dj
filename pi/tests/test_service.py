@@ -1,6 +1,6 @@
 import json
 
-from fakes import FakePlayer, FakeRepository
+from fakes import FakeRepository, FakeSink
 from receiver.gestures import Command, DebounceConfig
 from receiver.service import Receiver
 from receiver.storage import CommandRecord, GestureBatcher, SafeRepository
@@ -11,7 +11,7 @@ def msg(label, score=0.95):
 
 
 def make(fail=False):
-    player, repo = FakePlayer(), FakeRepository(fail=fail)
+    player, repo = FakeSink(), FakeRepository(fail=fail)
     receiver = Receiver(player, SafeRepository(repo), DebounceConfig(min_frames=3, cooldown_s=1.0, release_frames=3),
                         batcher=GestureBatcher(interval_s=5.0))
     return receiver, player, repo

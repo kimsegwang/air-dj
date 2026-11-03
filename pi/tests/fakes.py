@@ -15,10 +15,14 @@ class FakeRepository:
         self.gesture_batches.append(list(records))
 
 
-class FakePlayer:
+class FakeSink:
     def __init__(self):
-        self.commands = []
+        self.records = []
 
-    def execute(self, command):
-        self.commands.append(command)
+    @property
+    def commands(self):
+        return [r.command for r in self.records]
+
+    def send(self, record):
+        self.records.append(record)
         return True

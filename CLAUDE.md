@@ -112,6 +112,11 @@ python tools/serial_read.py --port COMx --seconds 15
 - conda `air-dj`에서 실행. `air-dj/commands`를 구독해 mpv를 제어한다.
 - mpv는 에이전트가 `--input-ipc-server=\\.\pipe\<이름>`으로 띄운다(윈도우 IPC는 named pipe). 음악 폴더는 설정으로 지정.
 - 브로커 주소(파이 IP), 음악 폴더 경로 등은 `agent/.env`(gitignore).
+- mpv: `winget install shinchiro.mpv` → `C:\Program Files\MPV Player\mpv.exe`(PATH에 없음, `MPV_PATH`로 지정). 음악 폴더 `C:\Users\jjjkk\Desktop\air-dj-music`.
+- mpv는 정지 상태로 시작한다(ok 제스처로 재생). 폴더 안 오디오 파일만 하위 폴더까지 재생목록에 넣고 반복한다.
+- 실행: `conda activate air-dj; cd agent; python -m air_dj_agent` (종료는 Ctrl+C → mpv도 같이 종료)
+- 테스트: `cd agent; pytest`. 실기 확인(2026-11-03): 6개 명령 모두 mpv 속성(pause/volume/playlist-pos)에 반영됨.
+- 수동 테스트로 가짜 제스처를 보낼 때는 receiver `MQTT_TOPIC`을 다른 토픽으로 바꾼다. 보드가 켜져 있으면 실제 `no_hand`가 섞여 연속 프레임이 끊긴다.
 
 ## 파이 서비스: 개발 / 테스트 / 실행
 노트북 (conda):
@@ -119,6 +124,7 @@ python tools/serial_read.py --port COMx --seconds 15
 conda env create -f environment.yml   # 최초 1회 (갱신: conda env update -f environment.yml --prune)
 conda activate air-dj
 pytest pi/tests
+cd agent; pytest   # agent는 pytest.ini가 따로 있어 디렉터리에서 실행
 ```
 - 패키지는 `pi/requirements.txt` 한 곳에서만 관리한다. `environment.yml`에 패키지를 직접 추가하지 않는다.
 - 디바운스, 제스처→명령 매핑은 순수 함수. DB 접근은 저장소 인터페이스 뒤에 두고, 테스트/CI는 가짜 저장소를 쓴다.

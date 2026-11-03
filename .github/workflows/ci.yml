@@ -25,4 +25,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r pi/requirements.txt
-      - run: pytest pi/tests
+      - run: pytest
+        working-directory: pi
+      - run: pytest
+        working-directory: agent

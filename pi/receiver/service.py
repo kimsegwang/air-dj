@@ -1,10 +1,10 @@
-"""메시지 하나를 받아 디바운스 → 플레이어 → 저장까지 처리한다. MQTT와 분리돼 있어 테스트에서 바로 부른다."""
+"""메시지 하나를 받아 디바운스 → 명령 발행 → 저장까지 처리한다. MQTT와 분리돼 있어 테스트에서 바로 부른다."""
 
 import logging
 
+from receiver.commands import CommandSink
 from receiver.gestures import DEFAULT_MAPPING, Command, DebounceConfig, DebounceState, step
 from receiver.message import parse_gesture
-from receiver.player import Player
 from receiver.storage import CommandRecord, GestureBatcher, GestureRecord, Repository
 
 log = logging.getLogger(__name__)
@@ -16,13 +16,13 @@ NOT_STORED = {"no_hand"}
 class Receiver:
     def __init__(
         self,
-        player: Player,
+        sink: CommandSink,
         repo: Repository,  # 실패해도 예외를 던지지 않는 저장소 (SafeRepository/BackgroundRepository)
         config: DebounceConfig = DebounceConfig(),
         mapping: dict[str, Command] = DEFAULT_MAPPING,
         batcher: GestureBatcher | None = None,
     ):
-        self._player = player
+        self._sink = sink
         self._repo = repo
         self._config = config
         self._mapping = mapping
@@ -45,8 +45,9 @@ class Receiver:
             return None
 
         log.info("%s (%s %.2f)", command.value, gesture.label, gesture.score)
-        self._player.execute(command)
-        self._repo.save_command(CommandRecord(command.value, gesture.label, gesture.ts))
+        record = CommandRecord(command.value, gesture.label, gesture.ts)
+        self._sink.send(record)
+        self._repo.save_command(record)
         return command
 
     def flush(self) -> None:
