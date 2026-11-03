@@ -40,8 +40,10 @@
 
 | 단계 | 컴포넌트 (버전) | 모델 | 입력 | 크기 |
 |---|---|---|---|---|
-| ① 손 검출 | `espressif/hand_detect` 0.2.1 | `espdet_pico_224_224_hand` (ESPDet-Pico 검출기) | 224×224 RGB | 약 0.5MB |
-| ② 제스처 분류 | `espressif/hand_gesture_recognition` 0.2.1 | `mobilenetv2_0_5_128_128_gesture` (MobileNetV2 0.5×) | 128×128 RGB (손 영역을 잘라서) | 약 0.8MB |
+| ① 손 검출 | `espressif/hand_detect` 0.2.1 | `espdet_pico_224_224_hand` | 224×224 RGB | 약 0.5MB |
+| ② 제스처 분류 | `espressif/hand_gesture_recognition` 0.2.1 | `mobilenetv2_0_5_128_128_gesture` | 128×128 RGB (손 영역을 잘라서) | 약 0.8MB |
+
+(구조는 이름 기준으로 ①은 Espressif의 경량 검출기 ESPDet-Pico, ②는 MobileNetV2 폭 0.5배로 보인다. 학습 데이터셋은 컴포넌트 문서에 나와 있지 않다.)
 
 - 추론 프레임워크: `espressif/esp-dl` 3.3.14 / 카메라: `espressif/esp32-camera` 2.1.8 (OV3660, QVGA 320×240 JPEG)
 - 처리 흐름: JPEG 디코딩 → ① 손 위치(박스)와 검출 점수 → 손마다 잘라서 ② 제스처 분류 → 검출 점수가 가장 높은 손 하나를 MQTT로 발행
@@ -50,6 +52,7 @@
 - 실측(실내, ESP32-S3 240MHz): 프레임당 약 185ms(약 5fps) = 디코딩 13 + 손 검출 171 + 분류 수 ms. 모델이 PSRAM 약 0.75MB 사용.
 - 정확도 메모: ok/five/one/two/like는 안정적이고, dislike는 손 검출 점수가 낮아 느리다. 배경이 복잡하면 `no_gesture`가 많이 섞인다.
 - 모델 정보 출처: `firmware/managed_components/espressif__hand_detect/README.md`, `.../espressif__hand_gesture_recognition/README.md` (빌드 후 생성)
+- 라이선스: esp-dl, hand_detect, hand_gesture_recognition 모두 **MIT** (Espressif). 모델 파일은 이 레포에 포함하지 않는다.
 
 ## 제스처
 
