@@ -1,5 +1,5 @@
 from fakes import FakeRepository
-from receiver.storage import CommandRecord, GestureBatcher, GestureRecord, SafeRepository
+from receiver.storage import BackgroundRepository, CommandRecord, GestureBatcher, GestureRecord, SafeRepository
 
 
 def g(ts):
@@ -20,6 +20,22 @@ def test_safe_repository_swallows_errors(caplog):
     assert repo.save_command(CommandRecord("pause", "five", 1.0)) is False
     assert repo.save_gestures([g(1.0)]) is False
     assert "저장 실패" in caplog.text
+
+
+def test_background_repository_saves_everything_before_close():
+    fake = FakeRepository()
+    repo = BackgroundRepository(SafeRepository(fake))
+    repo.save_command(CommandRecord("pause", "five", 1.0))
+    repo.save_gestures([g(1.0), g(2.0)])
+    repo.close()
+    assert fake.commands == [CommandRecord("pause", "five", 1.0)]
+    assert fake.gesture_batches == [[g(1.0), g(2.0)]]
+
+
+def test_background_repository_survives_failures():
+    repo = BackgroundRepository(SafeRepository(FakeRepository(fail=True)))
+    repo.save_command(CommandRecord("pause", "five", 1.0))
+    repo.close()  # 예외 없이 끝나야 한다
 
 
 def test_batcher_flushes_after_interval():

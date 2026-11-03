@@ -1,20 +1,23 @@
 # air-dj — 손 제스처 음악 플레이어
 
 XIAO ESP32S3 Sense가 카메라로 손 제스처를 **온디바이스(ESP-DL)** 로 인식해 MQTT로 보내고,
-라즈베리파이 5가 받아서 mpv로 음악을 제어하고 Supabase에 로그를 저장한다.
+라즈베리파이 5가 받아서 디바운스·명령 판단·Supabase 저장을 한 뒤 명령을 MQTT로 발행한다.
+**음악은 윈도우 노트북에서 재생한다**(파이에는 스피커가 없음). 노트북의 플레이어 에이전트가 명령을 받아 mpv를 제어한다.
 
 ```
-[XIAO ESP32S3 Sense] --MQTT--> [Pi5: mosquitto -> receiver(Python)] --> mpv
-   카메라 + ESP-DL                                      \--> Supabase (Postgres)
+[XIAO ESP32S3 Sense] --air-dj/gesture--> [Pi5: mosquitto + receiver] --air-dj/commands--> [노트북: agent -> mpv -> 스피커]
+   카메라 + ESP-DL                                   \--> Supabase (Postgres)
 ```
 
 ## 레포 구조
 - `firmware/` — ESP-IDF 프로젝트 (esp32-camera + espressif/hand_detect + espressif/hand_gesture_recognition)
-- `pi/` — 수신 서비스(Python), Dockerfile, requirements.txt, tests/
+- `pi/` — 수신 서비스(Python, 파이에서 Docker로 실행), Dockerfile, requirements.txt, tests/
+- `agent/` — 노트북 플레이어 에이전트(Python, conda `air-dj`에서 실행): `air-dj/commands` 구독 → mpv(named pipe)
 - `supabase/schema.sql` — 테이블 생성 SQL (대시보드 SQL 에디터에서 수동 실행)
+- `mosquitto/mosquitto.conf` — LAN 전용 브로커 설정 (파이 compose / 노트북 개발용 공용)
 - `tools/serial_read.py` — 시리얼 로그를 N초 읽고 종료
 - `docker-compose.yml` — mosquitto + receiver (파이에서 실행)
-- `environment.yml` — conda 환경 (pip로 `pi/requirements.txt` 참조)
+- `environment.yml` — conda 환경 (pip로 `pi/requirements.txt` 참조, receiver 개발과 agent 실행 공용)
 - `.github/workflows/ci.yml` — 펌웨어 빌드(`espressif/esp-idf-ci-action@v1`, `esp_idf_version: v5.5.6`, `target: esp32s3`, `path: firmware`) / pytest / docker 이미지 빌드
 
 ## 절대 규칙
@@ -24,7 +27,9 @@ XIAO ESP32S3 Sense가 카메라로 손 제스처를 **온디바이스(ESP-DL)** 
 3. **비밀값 커밋 금지**: Wi-Fi SSID/비밀번호, 브로커 주소, Supabase URL/키/연결 문자열.
    - 펌웨어: Kconfig(menuconfig)로 설정 → `sdkconfig`는 gitignore, 커밋용 기본값은 `sdkconfig.defaults`(비밀값 없이)
    - 파이: `.env`(gitignore), 변수 이름만 `.env.example`에
-4. **ESP32는 Supabase에 직접 연결하지 않는다.** ESP32 → MQTT → Pi → Supabase.
+   - 노트북 에이전트: `agent/.env`(gitignore), 변수 이름만 `agent/.env.example`에
+   - Supabase secret 키(`sb_secret_...`)는 로그에도 남기지 않는다(요청 헤더 로깅 금지).
+4. **ESP32와 노트북 에이전트는 Supabase에 직접 연결하지 않는다.** 저장은 파이 receiver만 한다.
 5. **추론은 ESP32-S3에서.** 모델 학습 없음, 사전 학습 모델만 사용. ESP-WHO 프레임워크 전체는 쓰지 않는다.
 6. **API/설정값은 추측하지 않는다.** `firmware/managed_components/` 안의 소스·예제, 공식 문서를 먼저 읽는다.
 7. 단계별로 진행하고, 각 단계가 끝나면 (무엇을 했는지 / 어떻게 확인했는지 / 다음 할 일)을 보고하고 확인을 받는다.
@@ -82,14 +87,31 @@ conda activate air-dj
 python tools/serial_read.py --port COMx --seconds 15
 ```
 
-## MQTT 메시지 (ESP32 → 파이)
-- 토픽 `air-dj/gesture`, QoS 0, 매 프레임(약 5Hz) 발행. 손이 없어도 `no_hand`를 보낸다(디바운스가 "내림"을 알아야 함).
+## MQTT 메시지
+### `air-dj/gesture` (ESP32 → 파이 receiver)
+- QoS 0, 매 프레임(약 5Hz) 발행. 손이 없어도 `no_hand`를 보낸다(디바운스가 "내림"을 알아야 함).
 - 페이로드: `{"seq":123,"label":"five","score":0.970,"det":0.880,"ms":185}`
   - `label`: hand_gesture_recognition 라벨(one~five, like, ok, call, dislike, no_gesture, no_hand), 손 여러 개면 det 최고 하나
   - `score`: 제스처 분류 점수, `det`: 손 검출 점수(손 없으면 0), `ms`: 프레임 처리 시간, `seq`: 부팅 후 프레임 번호
 - ESP32에는 시계가 없으므로 시각은 파이가 수신 시각으로 붙인다.
 - 브로커 URI는 menuconfig > air-dj (sdkconfig에만). 노트북 개발용 브로커:
   `docker run -d --name air-dj-mqtt-dev -p 1883:1883 -v "${PWD}\mosquitto\mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" eclipse-mosquitto:2`
+
+### `air-dj/commands` (파이 receiver → 노트북 agent)
+- 디바운스를 통과한 명령만, 명령당 한 번 발행. QoS 1(유실 방지), retain 없음(재접속 시 옛 명령 재실행 방지).
+- 페이로드: `{"command":"pause","label":"five","ts":1793679259.65}`
+  - `command`: play | pause | next | prev | volume_up | volume_down, `ts`: 파이 수신 시각(epoch 초)
+
+## Supabase (파이 receiver만 접속)
+- REST(PostgREST) `https://<project_ref>.supabase.co/rest/v1/<table>`에 POST. 클라이언트 라이브러리 없이 HTTP로 직접.
+- 키는 **secret 키**(`sb_secret_...`, RLS 우회). **`apikey` 헤더로만** 보낸다(새 키는 JWT가 아니므로 `Authorization: Bearer` 금지).
+- 테이블은 RLS를 켜고 정책은 두지 않는다(publishable 키로는 접근 불가). secret 키가 쓰는 `service_role`에는 grant가 필요하다.
+- 출처: supabase.com/docs/guides/api/api-keys, /guides/api/securing-your-api (2026-11-03 확인)
+
+## 노트북 플레이어 에이전트 (`agent/`)
+- conda `air-dj`에서 실행. `air-dj/commands`를 구독해 mpv를 제어한다.
+- mpv는 에이전트가 `--input-ipc-server=\\.\pipe\<이름>`으로 띄운다(윈도우 IPC는 named pipe). 음악 폴더는 설정으로 지정.
+- 브로커 주소(파이 IP), 음악 폴더 경로 등은 `agent/.env`(gitignore).
 
 ## 파이 서비스: 개발 / 테스트 / 실행
 노트북 (conda):
@@ -102,7 +124,7 @@ pytest pi/tests
 - 디바운스, 제스처→명령 매핑은 순수 함수. DB 접근은 저장소 인터페이스 뒤에 두고, 테스트/CI는 가짜 저장소를 쓴다.
 - 저장 실패로 서비스가 죽으면 안 된다(로그만 남김). 명령은 즉시 저장, 제스처 원본은 몇 초 단위 일괄 저장.
 
-라즈베리파이 5 (arm64):
+라즈베리파이 5 (arm64): docker compose로 **mosquitto + receiver만** 실행한다(mpv/오디오는 파이에 없음).
 ```bash
 cp .env.example .env   # 값 채우기
 docker compose up -d --build

@@ -5,7 +5,7 @@ import logging
 from receiver.gestures import DEFAULT_MAPPING, Command, DebounceConfig, DebounceState, step
 from receiver.message import parse_gesture
 from receiver.player import Player
-from receiver.storage import CommandRecord, GestureBatcher, GestureRecord, SafeRepository
+from receiver.storage import CommandRecord, GestureBatcher, GestureRecord, Repository
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class Receiver:
     def __init__(
         self,
         player: Player,
-        repo: SafeRepository,
+        repo: Repository,  # 실패해도 예외를 던지지 않는 저장소 (SafeRepository/BackgroundRepository)
         config: DebounceConfig = DebounceConfig(),
         mapping: dict[str, Command] = DEFAULT_MAPPING,
         batcher: GestureBatcher | None = None,

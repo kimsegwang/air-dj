@@ -4,6 +4,8 @@
 """
 
 import logging
+import queue
+import threading
 from dataclasses import dataclass, field
 from typing import Protocol, Sequence
 
@@ -50,6 +52,44 @@ class SafeRepository:
         except Exception:
             log.exception("제스처 %d건 저장 실패", len(records))
             return False
+
+
+class BackgroundRepository:
+    """저장을 별도 스레드에서 한다. DB가 느리거나 끊겨도 MQTT 처리(명령 반응)가 밀리지 않게."""
+
+    def __init__(self, inner: SafeRepository, max_queue: int = 1000):
+        self._inner = inner
+        self._queue: queue.Queue = queue.Queue(maxsize=max_queue)
+        self._thread = threading.Thread(target=self._run, name="storage", daemon=True)
+        self._thread.start()
+
+    def save_command(self, record: CommandRecord) -> None:
+        self._put(("command", record))
+
+    def save_gestures(self, records: Sequence[GestureRecord]) -> None:
+        self._put(("gestures", list(records)))
+
+    def close(self, timeout_s: float = 10.0) -> None:
+        """남은 저장을 처리하고 스레드를 끝낸다."""
+        try:
+            self._queue.put(None, timeout=timeout_s)
+        except queue.Full:
+            log.warning("저장 큐가 가득 차 종료 신호를 넣지 못함")
+        self._thread.join(timeout_s)
+
+    def _put(self, item) -> None:
+        try:
+            self._queue.put_nowait(item)
+        except queue.Full:
+            log.warning("저장 큐가 가득 참, 버림: %s", item[0])
+
+    def _run(self) -> None:
+        while (item := self._queue.get()) is not None:
+            kind, data = item
+            if kind == "command":
+                self._inner.save_command(data)
+            else:
+                self._inner.save_gestures(data)
 
 
 @dataclass

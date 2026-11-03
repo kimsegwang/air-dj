@@ -3,6 +3,7 @@
 환경 변수 (.env.example 참고):
     MQTT_HOST, MQTT_PORT, MQTT_TOPIC
     PLAYER=log|mpv, MPV_SOCKET
+    SUPABASE_URL, SUPABASE_SECRET_KEY (없으면 로그만 남긴다)
 """
 
 import logging
@@ -15,7 +16,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from receiver.player import LogPlayer, MpvPlayer
 from receiver.service import Receiver
-from receiver.storage import SafeRepository
+from receiver.storage import BackgroundRepository, SafeRepository
+from receiver.supabase import SupabaseRepository
 
 log = logging.getLogger("receiver")
 
@@ -39,7 +41,17 @@ def main() -> None:
     player_kind = os.environ.get("PLAYER", "log")
 
     player = MpvPlayer(os.environ.get("MPV_SOCKET", "/tmp/mpvsocket")) if player_kind == "mpv" else LogPlayer()
-    receiver = Receiver(player, SafeRepository(LogRepository()))
+
+    supabase_url = os.environ.get("SUPABASE_URL", "")
+    supabase_key = os.environ.get("SUPABASE_SECRET_KEY", "")
+    if supabase_url and supabase_key:
+        inner = SupabaseRepository(supabase_url, supabase_key)
+        log.info("storage: supabase (%s)", supabase_url)  # 키는 로그에 남기지 않는다
+    else:
+        inner = LogRepository()
+        log.warning("storage: SUPABASE_URL/SUPABASE_SECRET_KEY 없음 → 로그만 남긴다")
+    repo = BackgroundRepository(SafeRepository(inner))
+    receiver = Receiver(player, repo)
 
     def on_connect(client, userdata, flags, reason_code, properties):
         log.info("MQTT connected to %s:%d (%s), subscribing %s", host, port, reason_code, topic)
@@ -72,6 +84,7 @@ def main() -> None:
         client.loop_forever(retry_first_connection=True)
     finally:
         receiver.flush()
+        repo.close()
         log.info("stopped")
 
 
