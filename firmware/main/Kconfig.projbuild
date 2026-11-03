@@ -10,6 +10,12 @@ menu "air-dj"
         string "Wi-Fi password"
         default ""
 
+    config AIRDJ_MQTT_BROKER_URI
+        string "MQTT broker URI"
+        default ""
+        help
+            예: mqtt://192.168.0.10:1883. 비워 두면 MQTT를 쓰지 않는다. sdkconfig에만 저장한다.
+
     config AIRDJ_PREVIEW
         bool "Enable web preview (dev only)"
         default y

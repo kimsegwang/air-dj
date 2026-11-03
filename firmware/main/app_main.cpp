@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "hand_detect.hpp"
 #include "hand_gesture_recognition.hpp"
+#include "mqtt.hpp"
 #include "nvs_flash.h"
 #include "preview.hpp"
 #include "sdkconfig.h"
@@ -39,6 +40,9 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(camera_init());
 
     bool online = wifi_connect(15000);
+    if (online) {
+        mqtt_start();
+    }
 #if CONFIG_AIRDJ_PREVIEW
     if (online) {
         preview_start();
@@ -115,6 +119,23 @@ extern "C" void app_main(void)
         if (online) {
             preview_set_result(json);
         }
+
+        // MQTT: 검출 점수가 가장 높은 손 하나. 손이 없어도 no_hand를 보낸다 (파이 디바운스가 "내림"을 알아야 함)
+        const char *label = "no_hand";
+        float score = 1.0f, det = 0.0f;
+        i = 0;
+        for (const auto &hand : hands) {
+            if (i < gestures.size() && hand.score > det) {
+                label = gestures[i].cat_name;
+                score = gestures[i].score;
+                det = hand.score;
+            }
+            i++;
+        }
+        char msg[160];
+        snprintf(msg, sizeof(msg), "{\"seq\":%lu,\"label\":\"%s\",\"score\":%.3f,\"det\":%.3f,\"ms\":%d}",
+                 (unsigned long)frame, label, score, det, loop_ms);
+        mqtt_publish(kGestureTopic, msg);
         vTaskDelay(1);  // IDLE 태스크가 돌 수 있게 양보 (태스크 워치독)
     }
 }

@@ -76,6 +76,15 @@ conda activate air-dj
 python tools/serial_read.py --port COMx --seconds 15
 ```
 
+## MQTT 메시지 (ESP32 → 파이)
+- 토픽 `air-dj/gesture`, QoS 0, 매 프레임(약 5Hz) 발행. 손이 없어도 `no_hand`를 보낸다(디바운스가 "내림"을 알아야 함).
+- 페이로드: `{"seq":123,"label":"five","score":0.970,"det":0.880,"ms":185}`
+  - `label`: hand_gesture_recognition 라벨(one~five, like, ok, call, dislike, no_gesture, no_hand), 손 여러 개면 det 최고 하나
+  - `score`: 제스처 분류 점수, `det`: 손 검출 점수(손 없으면 0), `ms`: 프레임 처리 시간, `seq`: 부팅 후 프레임 번호
+- ESP32에는 시계가 없으므로 시각은 파이가 수신 시각으로 붙인다.
+- 브로커 URI는 menuconfig > air-dj (sdkconfig에만). 노트북 개발용 브로커:
+  `docker run -d --name air-dj-mqtt-dev -p 1883:1883 -v "${PWD}\mosquitto\mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" eclipse-mosquitto:2`
+
 ## 파이 서비스: 개발 / 테스트 / 실행
 노트북 (conda):
 ```powershell
