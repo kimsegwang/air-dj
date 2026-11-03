@@ -37,9 +37,49 @@ def test_low_score_frames_are_ignored():
     assert run(frames) == []
 
 
-def test_low_score_frame_breaks_the_streak():
+def test_low_score_frame_in_between_still_counts_votes():
     frames = [("five", 0.9, 0.0), ("five", 0.9, 0.1), ("five", 0.3, 0.2), ("five", 0.9, 0.3)]
-    assert run(frames) == []
+    assert run(frames) == [(Command.PAUSE, 0.3)]
+
+
+def test_no_gesture_interleaved_still_fires():
+    # 실측: one 1프레임 / no_gesture 1프레임이 번갈아 나온다
+    frames = [("one", 0.99, 0.0), ("no_gesture", 0.99, 0.2), ("one", 0.99, 0.4),
+              ("no_gesture", 0.99, 0.6), ("one", 0.99, 0.8)]
+    assert run(frames) == [(Command.NEXT, 0.8)]
+
+
+def test_sparse_votes_do_not_fire():
+    labels = ["one", "no_gesture", "no_gesture", "one", "no_gesture", "no_gesture", "one", "no_gesture"]
+    assert run([(label, 0.99, i * 0.2) for i, label in enumerate(labels)]) == []
+
+
+def test_long_no_gesture_while_holding_does_not_fire_again():
+    # 실측: 들고 있는 동안 no_gesture가 최대 23프레임 이어졌다
+    frames = (
+        [("one", 0.99, i * 0.2) for i in range(3)]
+        + [("no_gesture", 0.99, 1.0 + i * 0.2) for i in range(23)]
+        + [("one", 0.99, 6.0 + i * 0.2) for i in range(3)]
+    )
+    assert run(frames, DebounceConfig()) == [(Command.NEXT, 0.4)]
+
+
+def test_very_long_other_pose_releases():
+    frames = (
+        [("one", 0.99, i * 0.2) for i in range(3)]
+        + [("no_gesture", 0.99, 1.0 + i * 0.2) for i in range(25)]
+        + [("one", 0.99, 7.0 + i * 0.2) for i in range(3)]
+    )
+    assert run(frames, DebounceConfig()) == [(Command.NEXT, 0.4), (Command.NEXT, 7.4)]
+
+
+def test_hand_leaving_releases_quickly():
+    frames = (
+        [("one", 0.99, i * 0.2) for i in range(3)]
+        + [("no_hand", 1.0, 1.0 + i * 0.2) for i in range(5)]
+        + [("one", 0.99, 2.0 + i * 0.2) for i in range(3)]
+    )
+    assert run(frames, DebounceConfig()) == [(Command.NEXT, 0.4), (Command.NEXT, 2.4)]
 
 
 def test_unmapped_labels_never_fire():

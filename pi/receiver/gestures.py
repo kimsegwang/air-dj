@@ -34,20 +34,25 @@ class Gesture:
     ts: float  # 초 단위 (수신 시각)
 
 
+NO_HAND = "no_hand"
+
+
 @dataclass(frozen=True)
 class DebounceConfig:
-    min_score: float = 0.8   # 이보다 낮은 프레임은 "손 없음"으로 취급
-    min_frames: int = 3      # 같은 라벨이 연속으로 이만큼 나와야 명령
+    min_score: float = 0.8   # 이보다 낮은 프레임은 표로 세지 않는다
+    window: int = 5          # 최근 이만큼의 프레임에서
+    min_frames: int = 3      # 같은 제스처가 이만큼 나오면 명령 (사이에 no_gesture가 끼어도 된다)
     cooldown_s: float = 1.0  # 명령 사이 최소 간격
-    release_frames: int = 5  # 명령을 낸 라벨이 연속으로 이만큼(약 1초) 안 보여야 "내렸다"로 본다
+    release_frames: int = 5          # 손이 화면에서 사라진 채(no_hand) 이만큼(약 1초) 지나면 "내렸다"
+    release_idle_frames: int = 25    # 손은 보이지만 그 제스처가 아닌 채 이만큼(약 5초) 지나도 "내렸다"
 
 
 @dataclass(frozen=True)
 class DebounceState:
-    label: str | None = None
-    count: int = 0
-    fired_label: str | None = None  # 마지막으로 명령을 낸 라벨 (아직 안 내렸으면 유지)
-    away: int = 0                   # fired_label이 연속으로 안 보인 프레임 수
+    recent: tuple[str | None, ...] = ()  # 최근 window 프레임의 표 (명령 라벨이 아니거나 점수가 낮으면 None)
+    fired_label: str | None = None       # 마지막으로 명령을 낸 라벨 (아직 안 내렸으면 유지)
+    gone: int = 0                        # fired_label 이후 연속 no_hand 프레임 수
+    since: int = 0                       # fired_label이 마지막으로 보인 뒤 지난 프레임 수
     last_fire_ts: float | None = None
 
 
@@ -59,28 +64,28 @@ def step(
 ) -> tuple[DebounceState, Command | None]:
     """프레임 하나를 반영한 새 상태와, 낼 명령(없으면 None)을 돌려준다.
 
-    같은 제스처를 계속 유지해도 명령은 한 번만 나간다. 같은 명령을 다시 내려면 그 제스처가
-    release_frames 동안 연속으로 안 보여야 한다 (들고 있는 중 1~2프레임 깜빡임은 무시).
+    실측(2026-11-03): 제스처를 들고 있어도 no_gesture가 1~20프레임씩 섞여 나온다.
+    그래서 "연속 N프레임"이 아니라 "최근 window 중 min_frames"로 센다.
+    같은 제스처를 계속 유지해도 명령은 한 번만 나간다. 같은 명령을 다시 내려면 손을 화면 밖으로
+    빼거나(release_frames), 오래 다른 손 모양을 해야 한다(release_idle_frames).
     다른 제스처로 바꾸면 바로 반응한다.
     """
-    label = gesture.label if gesture.score >= config.min_score else None
+    vote = gesture.label if gesture.label in mapping and gesture.score >= config.min_score else None
 
     if state.fired_label is not None:
-        away = 0 if label == state.fired_label else state.away + 1
-        if away >= config.release_frames:
-            state = replace(state, fired_label=None, away=0)
+        if vote == state.fired_label:
+            state = replace(state, gone=0, since=0)
         else:
-            state = replace(state, away=away)
+            gone = state.gone + 1 if gesture.label == NO_HAND else 0
+            since = state.since + 1
+            if gone >= config.release_frames or since >= config.release_idle_frames:
+                state = replace(state, fired_label=None, gone=0, since=0)
+            else:
+                state = replace(state, gone=gone, since=since)
 
-    if label != state.label:
-        state = replace(state, label=label, count=0)
-    if label is None:
-        return state, None
-    state = replace(state, count=state.count + 1)
-
-    command = mapping.get(label)
-    if command is None or label == state.fired_label or state.count < config.min_frames:
+    state = replace(state, recent=(state.recent + (vote,))[-config.window:])
+    if vote is None or vote == state.fired_label or state.recent.count(vote) < config.min_frames:
         return state, None
     if state.last_fire_ts is not None and gesture.ts - state.last_fire_ts < config.cooldown_s:
         return state, None
-    return replace(state, fired_label=label, away=0, last_fire_ts=gesture.ts), command
+    return replace(state, recent=(), fired_label=vote, gone=0, since=0, last_fire_ts=gesture.ts), mapping[vote]

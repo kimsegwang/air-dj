@@ -47,6 +47,11 @@ XIAO ESP32S3 Sense가 카메라로 손 제스처를 **온디바이스(ESP-DL)** 
 - ok/five/one/two/like는 분류 0.95~1.00, 검출(det) 0.6~0.9로 안정적.
 - **dislike(👎)는 손 검출이 약하다**(det 0.27~0.5). dislike와 no_gesture가 번갈아 나와 명령까지 수 초 걸릴 수 있다. 사용자 판단으로 매핑은 유지.
 - 들고 있는 중 1~2프레임 no_gesture/점수 하락이 섞인다 → 디바운스 `release_frames=5`(약 1초)로 재발화 방지.
+- 같은 날 오후 실사용(파이 배포 후): 손이 보인 프레임의 71%가 no_gesture(점수 중앙값 0.999), one은 1~3프레임씩
+  no_gesture와 번갈아 나왔다(no_gesture 연속 최대 23프레임). 원인(거리/손 각도/흔들림)은 미확인.
+  → 디바운스를 "최근 5프레임 중 3프레임"으로 변경. 재발화는 no_hand 5프레임 또는 다른 손 모양 25프레임(약 5초) 후.
+  같은 명령을 연달아 내려면 손을 화면 밖으로 1초 뺐다가 다시 한다.
+- 파이 receiver(`pi/`)를 바꾸면 파이에서 `cd ~/air-dj && git pull && docker compose up -d --build receiver`.
 
 ## 펌웨어: 빌드 / 플래시 / 로그
 **ESP-IDF 버전: v5.5.6 고정** (로컬 EIM과 CI `esp_idf_version` 모두 같은 값).
