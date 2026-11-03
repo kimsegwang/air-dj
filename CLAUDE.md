@@ -37,6 +37,12 @@ XIAO ESP32S3 Sense가 카메라로 손 제스처를 **온디바이스(ESP-DL)** 
   XCLK=10 PCLK=13 VSYNC=38 HREF=47 SDA=40 SCL=39 PWDN=-1 RESET=-1
 - PSRAM 8MB(Octal), Flash 8MB. 초기화 직후 몇 프레임은 버린다.
 
+## 제스처 인식 실측 (2026-11-03, 실내, QVGA)
+- 프레임당 약 185ms(약 5.4fps): JPEG 디코딩 13 + 손 검출 171 + 분류 수 ms. 모델 PSRAM 약 0.75MB.
+- ok/five/one/two/like는 분류 0.95~1.00, 검출(det) 0.6~0.9로 안정적.
+- **dislike(👎)는 손 검출이 약하다**(det 0.27~0.5). dislike와 no_gesture가 번갈아 나와 명령까지 수 초 걸릴 수 있다. 사용자 판단으로 매핑은 유지.
+- 들고 있는 중 1~2프레임 no_gesture/점수 하락이 섞인다 → 디바운스 `release_frames=5`(약 1초)로 재발화 방지.
+
 ## 펌웨어: 빌드 / 플래시 / 로그
 **ESP-IDF 버전: v5.5.6 고정** (로컬 EIM과 CI `esp_idf_version` 모두 같은 값).
 - v6.x를 쓰지 않는 이유: esp-dl README는 "release/v5.3 or above"만 명시하고, esp-dl 3.3.7은

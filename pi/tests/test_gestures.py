@@ -1,6 +1,6 @@
 from receiver.gestures import Command, DebounceConfig, DebounceState, Gesture, step
 
-CFG = DebounceConfig(min_score=0.8, min_frames=3, cooldown_s=1.0)
+CFG = DebounceConfig(min_score=0.8, min_frames=3, cooldown_s=1.0, release_frames=3)
 
 
 def run(frames, config=CFG):
@@ -50,10 +50,27 @@ def test_unmapped_labels_never_fire():
 def test_release_and_repeat_fires_again_after_cooldown():
     frames = (
         [("one", 0.9, t) for t in (0.0, 0.1, 0.2)]
-        + [("no_hand", 0.9, 0.5)]
+        + [("no_hand", 0.9, t) for t in (0.5, 0.6, 0.7)]
         + [("one", 0.9, t) for t in (1.3, 1.4, 1.5)]
     )
     assert run(frames) == [(Command.NEXT, 0.2), (Command.NEXT, 1.5)]
+
+
+def test_flicker_during_hold_does_not_fire_again():
+    # 실제 보드에서 본 현상: 한 번 들고 있는 동안 1~2프레임 다른 라벨/낮은 점수가 끼어든다
+    frames = (
+        [("two", 0.95, t) for t in (0.0, 0.2, 0.4, 0.6)]
+        + [("no_gesture", 0.9, 0.8)]
+        + [("two", 0.95, t) for t in (1.0, 1.2, 1.4, 1.6)]
+        + [("two", 0.5, 1.8), ("two", 0.4, 2.0)]
+        + [("two", 0.95, t) for t in (2.2, 2.4, 2.6, 2.8)]
+    )
+    assert run(frames) == [(Command.PREV, 0.4)]
+
+
+def test_switching_to_other_gesture_fires_immediately():
+    frames = [("five", 0.95, t) for t in (0.0, 0.2, 0.4)] + [("ok", 0.95, t) for t in (1.4, 1.6, 1.8)]
+    assert run(frames) == [(Command.PAUSE, 0.4), (Command.PLAY, 1.8)]
 
 
 def test_cooldown_delays_next_command_until_it_passes():
