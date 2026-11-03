@@ -20,6 +20,12 @@ def to_iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
+def project_url(url: str) -> str:
+    """대시보드의 RESTful endpoint(.../rest/v1/)를 넣어도 프로젝트 URL로 맞춘다."""
+    url = url.strip().rstrip("/")
+    return url.removesuffix("/rest/v1")
+
+
 def command_row(record: CommandRecord) -> dict:
     return {"received_at": to_iso(record.ts), "command": record.command, "label": record.label}
 
@@ -30,7 +36,7 @@ def gesture_row(record: GestureRecord) -> dict:
 
 class SupabaseRepository:
     def __init__(self, url: str, secret_key: str, session: requests.Session | None = None, timeout_s: float = 5.0):
-        self._base = url.rstrip("/") + "/rest/v1/"
+        self._base = project_url(url) + "/rest/v1/"
         self._session = session or requests.Session()
         self._headers = {
             "apikey": secret_key,

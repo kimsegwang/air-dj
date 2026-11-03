@@ -14,7 +14,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pi"))
 from receiver.storage import CommandRecord  # noqa: E402
-from receiver.supabase import COMMANDS_TABLE, SupabaseRepository  # noqa: E402
+from receiver.supabase import COMMANDS_TABLE, SupabaseRepository, project_url  # noqa: E402
 
 
 def load_env(path: Path) -> None:
@@ -49,7 +49,7 @@ def main() -> int:
         return 1
 
     resp = requests.get(
-        url.rstrip("/") + f"/rest/v1/{COMMANDS_TABLE}",
+        project_url(url) + f"/rest/v1/{COMMANDS_TABLE}",
         params={"select": "id,received_at,command,label", "label": "eq.selftest", "order": "id.desc", "limit": "3"},
         headers={"apikey": key},
         timeout=5,
