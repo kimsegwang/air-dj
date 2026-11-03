@@ -1,0 +1,95 @@
+# air-dj — 손 제스처 음악 플레이어
+
+XIAO ESP32S3 Sense가 카메라로 손 제스처를 **온디바이스(ESP-DL)** 로 인식해 MQTT로 보내고,
+라즈베리파이 5가 받아서 mpv로 음악을 제어하고 Supabase에 로그를 저장한다.
+
+```
+[XIAO ESP32S3 Sense] --MQTT--> [Pi5: mosquitto -> receiver(Python)] --> mpv
+   카메라 + ESP-DL                                      \--> Supabase (Postgres)
+```
+
+## 레포 구조
+- `firmware/` — ESP-IDF 프로젝트 (esp32-camera + espressif/hand_detect + espressif/hand_gesture_recognition)
+- `pi/` — 수신 서비스(Python), Dockerfile, requirements.txt, tests/
+- `supabase/schema.sql` — 테이블 생성 SQL (대시보드 SQL 에디터에서 수동 실행)
+- `tools/serial_read.py` — 시리얼 로그를 N초 읽고 종료
+- `docker-compose.yml` — mosquitto + receiver (파이에서 실행)
+- `environment.yml` — conda 환경 (pip로 `pi/requirements.txt` 참조)
+- `.github/workflows/ci.yml` — 펌웨어 빌드(`espressif/esp-idf-ci-action@v1`, `esp_idf_version: v5.5.6`, `target: esp32s3`, `path: firmware`) / pytest / docker 이미지 빌드
+
+## 절대 규칙
+1. **conda 환경이 활성화된 상태에서 `idf.py` 실행 금지.** ESP-IDF는 EIM 환경에서만 실행한다.
+   conda의 python/cmake/ninja가 PATH에 섞이면 빌드가 깨진다. 실행 전 `$env:CONDA_DEFAULT_ENV`가 비어 있는지 확인.
+2. **`idf.py monitor` 사용 금지** (대화형). 로그는 `tools/serial_read.py`로 확인한다.
+3. **비밀값 커밋 금지**: Wi-Fi SSID/비밀번호, 브로커 주소, Supabase URL/키/연결 문자열.
+   - 펌웨어: Kconfig(menuconfig)로 설정 → `sdkconfig`는 gitignore, 커밋용 기본값은 `sdkconfig.defaults`(비밀값 없이)
+   - 파이: `.env`(gitignore), 변수 이름만 `.env.example`에
+4. **ESP32는 Supabase에 직접 연결하지 않는다.** ESP32 → MQTT → Pi → Supabase.
+5. **추론은 ESP32-S3에서.** 모델 학습 없음, 사전 학습 모델만 사용. ESP-WHO 프레임워크 전체는 쓰지 않는다.
+6. **API/설정값은 추측하지 않는다.** `firmware/managed_components/` 안의 소스·예제, 공식 문서를 먼저 읽는다.
+7. 단계별로 진행하고, 각 단계가 끝나면 (무엇을 했는지 / 어떻게 확인했는지 / 다음 할 일)을 보고하고 확인을 받는다.
+   같은 방법으로 30분 넘게 막히면 반복하지 말고 원인 후보와 함께 보고한다.
+
+## 하드웨어 메모
+- 카메라는 **OV3660** (OV2640 아님). 상하 반전 시 `vflip` 설정 확인.
+- XIAO Sense 카메라 핀:
+  D0=15 D1=17 D2=18 D3=16 D4=14 D5=12 D6=11 D7=48,
+  XCLK=10 PCLK=13 VSYNC=38 HREF=47 SDA=40 SCL=39 PWDN=-1 RESET=-1
+- PSRAM 8MB(Octal), Flash 8MB. 초기화 직후 몇 프레임은 버린다.
+
+## 펌웨어: 빌드 / 플래시 / 로그
+**ESP-IDF 버전: v5.5.6 고정** (로컬 EIM과 CI `esp_idf_version` 모두 같은 값).
+- v6.x를 쓰지 않는 이유: esp-dl README는 "release/v5.3 or above"만 명시하고, esp-dl 3.3.7은
+  "do not support idf v6.0" 사유로 yank됐다. 최신 esp-dl 3.3.14의 v6 지원 근거는 없다.
+- 그래서 ESP-IDF MCP 서버(`idf.py mcp-server`)는 쓰지 않는다. v6.0부터 있는 기능이기 때문이다. `idf.py`는 CLI로 실행한다.
+- 버전을 올릴 때는 이 줄, EIM 설치, `.github/workflows/ci.yml`의 `esp_idf_version`을 함께 바꾼다.
+
+설치 위치 (EIM 0.20.1, `winget install Espressif.eim`):
+- ESP-IDF: `C:\esp\v5.5.6\esp-idf`
+- 도구/파이썬 venv/설치 목록: `C:\Espressif\tools` (`eim_idf.json`, `python\v5.5.6\venv`)
+- 활성화 스크립트: `C:\Espressif\tools\Microsoft.v5.5.6.PowerShell_profile.ps1`
+- EIM 바이너리: `C:\Program Files\eim\eim.exe` (PATH에 없음, GUI 앱이라 직접 호출하면 출력이 안 보인다)
+
+ESP-IDF 환경에서 명령 실행: **활성화 스크립트를 dot-source** 한다 (conda가 활성화돼 있으면 먼저 `conda deactivate`, base까지).
+```powershell
+. 'C:\Espressif\tools\Microsoft.v5.5.6.PowerShell_profile.ps1'
+cd firmware
+idf.py set-target esp32s3      # 최초 1회
+idf.py menuconfig              # Wi-Fi/MQTT 설정 (sdkconfig에만 저장됨, 사람이 직접 실행)
+idf.py build
+idf.py -p COMx flash
+```
+Claude Code는 매 호출이 새 셸이므로 한 줄로 실행한다 (대화형 `menuconfig`/`monitor`는 실행하지 않는다):
+```powershell
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Espressif\tools\Microsoft.v5.5.6.PowerShell_profile.ps1' *> `$null; Set-Location firmware; idf.py build; exit `$LASTEXITCODE"
+```
+- 활성화 후 python/cmake/ninja/xtensa gcc가 모두 `C:\Espressif\tools` 쪽으로 잡히는 것을 확인했다
+  (miniforge가 사용자 PATH에 상시 등록돼 있지만 활성화 스크립트가 앞에 붙인다).
+- `eim run "idf.py build" v5.5.6`도 동작한다(작업 디렉터리 유지 확인). 단 출력이 보이지 않아
+  `Start-Process -RedirectStandardOutput`이 필요하므로 기본 방법으로 쓰지 않는다.
+- 참고: IDF venv의 기반 파이썬은 miniforge base(3.12.8)다. miniforge base를 업데이트/삭제하면
+  venv가 깨질 수 있다. 그때는 EIM에서 v5.5.6을 재설치한다.
+
+로그 확인 (conda 환경에서, `idf.py` 아님):
+```powershell
+conda activate air-dj
+python tools/serial_read.py --port COMx --seconds 15
+```
+
+## 파이 서비스: 개발 / 테스트 / 실행
+노트북 (conda):
+```powershell
+conda env create -f environment.yml   # 최초 1회 (갱신: conda env update -f environment.yml --prune)
+conda activate air-dj
+pytest pi/tests
+```
+- 패키지는 `pi/requirements.txt` 한 곳에서만 관리한다. `environment.yml`에 패키지를 직접 추가하지 않는다.
+- 디바운스, 제스처→명령 매핑은 순수 함수. DB 접근은 저장소 인터페이스 뒤에 두고, 테스트/CI는 가짜 저장소를 쓴다.
+- 저장 실패로 서비스가 죽으면 안 된다(로그만 남김). 명령은 즉시 저장, 제스처 원본은 몇 초 단위 일괄 저장.
+
+라즈베리파이 5 (arm64):
+```bash
+cp .env.example .env   # 값 채우기
+docker compose up -d --build
+docker compose logs -f receiver
+```

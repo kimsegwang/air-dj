@@ -1,0 +1,28 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# ESP-IDF
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock.bak
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.coverage
+*.log
+
+# Claude Code (개인 설정)
+.claude/settings.local.json
+
+# editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
