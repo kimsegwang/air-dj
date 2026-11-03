@@ -20,10 +20,14 @@ MPV_COMMANDS: dict[str, list] = {
 }
 
 
-def parse_command(payload: bytes) -> str | None:
-    """모르는 명령이나 형식이 틀리면 None (agent는 무시하고 계속 돈다)."""
+def parse_command(payload: bytes) -> tuple[str, str | None] | None:
+    """(명령, 제스처 라벨). 모르는 명령이나 형식이 틀리면 None (agent는 무시하고 계속 돈다)."""
     try:
-        command = json.loads(payload)["command"]
+        data = json.loads(payload)
+        command = data["command"]
     except (ValueError, KeyError, TypeError):
         return None
-    return command if isinstance(command, str) and command in MPV_COMMANDS else None
+    if not isinstance(command, str) or command not in MPV_COMMANDS:
+        return None
+    label = data.get("label")
+    return command, label if isinstance(label, str) else None

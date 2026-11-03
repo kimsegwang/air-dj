@@ -1,20 +1,24 @@
 """python -m air_dj_agent   (agent/ 에서, conda air-dj)
 
 설정은 agent/.env (agent/.env.example 참고):
-    MQTT_HOST, MQTT_PORT, COMMANDS_TOPIC
+    MQTT_HOST, MQTT_PORT, COMMANDS_TOPIC, GESTURE_TOPIC
     MUSIC_DIR, MPV_PATH, MPV_PIPE
+    BOARD_URL, DASHBOARD_PORT, OPEN_BROWSER
 """
 
 import logging
 import os
 import signal
+import webbrowser
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
 from air_dj_agent.commands import MPV_COMMANDS, parse_command
+from air_dj_agent.dashboard import start_dashboard
 from air_dj_agent.mpv import Mpv
+from air_dj_agent.state import DashboardState
 
 log = logging.getLogger("agent")
 
@@ -36,7 +40,8 @@ def main() -> None:
 
     host = os.environ.get("MQTT_HOST", "localhost")
     port = int(os.environ.get("MQTT_PORT", "1883"))
-    topic = os.environ.get("COMMANDS_TOPIC", "air-dj/commands")
+    commands_topic = os.environ.get("COMMANDS_TOPIC", "air-dj/commands")
+    gesture_topic = os.environ.get("GESTURE_TOPIC", "air-dj/gesture")
     music_dir = os.environ.get("MUSIC_DIR", "")
     if not music_dir or not Path(music_dir).is_dir():
         raise SystemExit(f"MUSIC_DIR가 없거나 폴더가 아님: {music_dir!r} (agent/.env 확인)")
@@ -48,23 +53,37 @@ def main() -> None:
     )
     mpv.start()
 
+    state = DashboardState()
+    dashboard_port = int(os.environ.get("DASHBOARD_PORT", "8080"))
+    dashboard = start_dashboard(state, mpv, os.environ.get("BOARD_URL", ""), dashboard_port)
+    if os.environ.get("OPEN_BROWSER", "1") == "1":
+        webbrowser.open(f"http://localhost:{dashboard_port}/")
+
     def on_connect(client, userdata, flags, reason_code, properties):
-        log.info("MQTT connected to %s:%d (%s), subscribing %s", host, port, reason_code, topic)
-        client.subscribe(topic, qos=1)  # 재접속 때마다 다시 구독
+        log.info("MQTT connected to %s:%d (%s), subscribing %s, %s", host, port, reason_code, commands_topic, gesture_topic)
+        state.mqtt_connected = True
+        # 재접속 때마다 다시 구독. 제스처는 화면 표시용이라 QoS 0
+        client.subscribe([(commands_topic, 1), (gesture_topic, 0)])
 
     def on_disconnect(client, userdata, flags, reason_code, properties):
         log.warning("MQTT disconnected (%s), reconnecting", reason_code)
+        state.mqtt_connected = False
 
     def on_message(client, userdata, message):
         try:
-            command = parse_command(message.payload)
-            if command is None:
+            if message.topic == gesture_topic:
+                state.on_gesture(message.payload)
+                return
+            parsed = parse_command(message.payload)
+            if parsed is None:
                 log.warning("모르는 명령 무시: %r", message.payload[:200])
                 return
+            command, label = parsed
             ok = mpv.command(MPV_COMMANDS[command])
+            state.on_command(command, label, ok)
             log.info("%s -> %s", command, "ok" if ok else "실패")
         except Exception:
-            log.exception("명령 처리 실패")  # agent는 계속 돈다
+            log.exception("메시지 처리 실패")  # agent는 계속 돈다
 
     # clean session(기본값): 꺼져 있던 동안의 명령은 받지 않는다 (옛 명령 재실행 방지)
     client = mqtt.Client(CallbackAPIVersion.VERSION2, client_id="air-dj-agent")
@@ -84,6 +103,7 @@ def main() -> None:
     try:
         client.loop_forever(retry_first_connection=True)
     finally:
+        dashboard.shutdown()
         mpv.stop()
         log.info("stopped")
 

@@ -115,6 +115,10 @@ python tools/serial_read.py --port COMx --seconds 15
 - mpv: `winget install shinchiro.mpv` → `C:\Program Files\MPV Player\mpv.exe`(PATH에 없음, `MPV_PATH`로 지정). 음악 폴더 `C:\Users\jjjkk\Desktop\air-dj-music`.
 - mpv는 정지 상태로 시작한다(ok 제스처로 재생). 폴더 안 오디오 파일만 하위 폴더까지 재생목록에 넣고 반복한다.
 - 실행: `conda activate air-dj; cd agent; python -m air_dj_agent` (종료는 Ctrl+C → mpv도 같이 종료)
+- 대시보드: agent가 `http://localhost:8080/`을 띄우고 브라우저를 연다(127.0.0.1 전용, 표준 라이브러리 http.server).
+  카메라는 브라우저가 보드 `:81/stream`을 직접 받고, 손 박스는 보드 `/result`에 CORS 헤더가 없어 agent `/api/board`가 중계한다.
+  보드 스트림 서버는 한 번에 한 접속만 받는다(보드 미리보기 페이지와 동시에 열면 번갈아 끊긴다).
+  agent는 화면 표시용으로 `air-dj/gesture`(QoS 0)도 구독한다.
 - 테스트: `cd agent; pytest`. 실기 확인(2026-11-03): 6개 명령 모두 mpv 속성(pause/volume/playlist-pos)에 반영됨.
 - 수동 테스트로 가짜 제스처를 보낼 때는 receiver `MQTT_TOPIC`을 다른 토픽으로 바꾼다. 보드가 켜져 있으면 실제 `no_hand`가 섞여 연속 프레임이 끊긴다.
 
