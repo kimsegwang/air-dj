@@ -49,24 +49,111 @@
 - 배경이 깔끔하고, 손바닥이 카메라를 향하고, 50cm~1m 거리일 때 인식이 잘 된다.
 - 👎 dislike는 손 검출이 약해 몇 초 걸릴 수 있다.
 
-## 노트북에서 실행 (agent + 대시보드)
+## 처음 설치 (순서대로)
 
-준비 (최초 1회):
-```powershell
-winget install shinchiro.mpv                 # C:\Program Files\MPV Player\mpv.exe
-conda env create -f environment.yml
-copy agent\.env.example agent\.env           # MQTT_HOST(파이 IP), MPV_PATH, BOARD_URL(보드 IP) 채우기
-```
+파이 IP가 있어야 보드와 노트북을 설정할 수 있으므로 **Supabase → 파이 → 보드 → 노트북** 순서로 한다.
+세 기기는 **같은 와이파이(2.4GHz)** 에 있어야 한다(ESP32-S3는 5GHz를 지원하지 않는다).
 
-실행:
+### 준비물
+
+- 하드웨어: XIAO ESP32S3 Sense(카메라 포함), 라즈베리파이 5 + microSD(16GB 이상), 윈도우 노트북(스피커)
+- 노트북 소프트웨어: [Miniforge](https://github.com/conda-forge/miniforge)(conda), [ESP-IDF 설치 관리자 EIM](https://docs.espressif.com/projects/idf-im-ui/)(`winget install Espressif.eim`), Git, Microsoft Edge(윈도우 기본 포함)
+
+### 1. Supabase (기록, 선택)
+
+기록이 필요 없으면 건너뛴다(파이 `.env`를 비워 두면 기록만 안 남고 나머지는 동작한다).
+
+1. [supabase.com](https://supabase.com)에서 프로젝트를 만든다.
+2. 대시보드 **SQL Editor** → New query → [supabase/schema.sql](supabase/schema.sql) 내용을 붙여넣고 Run.
+3. 두 값을 메모한다: **Project URL**(`https://<ref>.supabase.co`), **secret 키**(Settings > API Keys, `sb_secret_...`, 절대 공유 금지).
+
+### 2. 라즈베리파이 5 (브로커 + receiver)
+
+1. **SD 카드 굽기**: [Raspberry Pi Imager](https://www.raspberrypi.com/software/)에서 Raspberry Pi 5 → **Raspberry Pi OS Lite (64-bit)**.
+   설정 편집에서 호스트 이름, 사용자 이름/비밀번호, **무선 LAN(위와 같은 와이파이)**, 시간대 Asia/Seoul, **SSH 사용**을 켠다.
+2. 파이를 부팅하고(첫 부팅 1~2분) **파이 IP를 확인**한다. 공유기 관리 페이지의 접속 기기 목록이 가장 확실하다
+   (`<호스트이름>.local`은 네트워크에 따라 안 될 수 있다). 공유기에서 이 IP를 고정(DHCP 예약)해 두면 나중에 설정을 다시 바꿀 일이 없다.
+3. 노트북에서 SSH로 접속해 Docker와 레포를 설치한다:
+   ```bash
+   ssh <사용자>@<파이 IP>
+   sudo apt-get update && sudo apt-get install -y git curl
+   curl -fsSL https://get.docker.com | sudo sh        # Docker 공식 설치 스크립트
+   sudo usermod -aG docker $USER && exit               # docker 그룹 반영을 위해 다시 접속
+   ```
+   ```bash
+   ssh <사용자>@<파이 IP>
+   git clone https://github.com/kimsegwang/air-dj.git ~/air-dj
+   cd ~/air-dj
+   cp .env.example .env && nano .env                   # 1번의 SUPABASE_URL, SUPABASE_SECRET_KEY (선택)
+   docker compose up -d --build
+   docker compose logs receiver                        # "MQTT connected" 가 보이면 성공
+   ```
+   재부팅해도 자동으로 다시 뜬다(`restart: unless-stopped`).
+
+### 3. 보드 (XIAO ESP32S3 Sense)
+
+1. EIM으로 **ESP-IDF v5.5.6**을 설치한다(다른 버전은 확인하지 않았다).
+2. **conda가 꺼진 PowerShell**에서 ESP-IDF 환경을 켠다. EIM이 만든 활성화 스크립트를 dot-source 한다(경로는 설치 위치에 따라 다름):
+   ```powershell
+   conda deactivate                                     # conda가 켜져 있으면 빌드가 깨진다
+   . 'C:\Espressif\tools\Microsoft.v5.5.6.PowerShell_profile.ps1'
+   cd firmware
+   idf.py set-target esp32s3                            # 최초 1회
+   idf.py menuconfig
+   ```
+3. menuconfig > **air-dj** 에서 설정한다(`sdkconfig`에만 저장되고 커밋되지 않는다):
+   - `Wi-Fi SSID` / `Wi-Fi password`: 위와 같은 2.4GHz 와이파이
+   - `MQTT broker URI`: `mqtt://<파이 IP>:1883`
+   - `Enable web preview`: 대시보드에서 카메라 영상을 보려면 켠다([보안 주의](#보안-주의) 참고)
+4. 보드를 USB로 연결하고(장치 관리자에서 COM 번호 확인) 빌드·플래시:
+   ```powershell
+   idf.py build
+   idf.py -p COMx flash
+   ```
+5. **보드 IP 확인**: 새 PowerShell에서 시리얼 로그를 읽어 `got ip: ...` 줄을 찾는다(공유기 관리 페이지에서도 확인 가능).
+   ```powershell
+   conda activate air-dj                                # 4번에서 만드는 환경. 아직 없으면 4번의 conda 줄을 먼저
+   python tools/serial_read.py --port COMx --seconds 15
+   ```
+   파이에서 `docker compose logs mosquitto`에 `ESP32_...` 접속이 보이면 보드 → 파이 연결 성공.
+
+### 4. 노트북 (agent + 대시보드)
+
 ```powershell
-conda activate air-dj
-cd agent
-python -m air_dj_agent
+winget install shinchiro.mpv                            # C:\Program Files\MPV Player\mpv.exe
+conda env create -f environment.yml                     # air-dj 환경 (최초 1회)
+copy agent\.env.example agent\.env
+notepad agent\.env
 ```
-- 대시보드가 주소창 없는 앱 창으로 열린다(Edge). **이 창을 닫으면 agent와 음악도 같이 꺼진다.** 터미널에서 Ctrl+C로 꺼도 된다.
-- 창을 닫아도 음악을 계속 틀고 싶으면 `agent/.env`에 `OPEN_BROWSER=tab`(일반 브라우저 탭, `http://localhost:8080`).
+`agent/.env`에 채울 값:
+| 변수 | 값 |
+|---|---|
+| `MQTT_HOST` | 파이 IP |
+| `MPV_PATH` | `C:\Program Files\MPV Player\mpv.exe` |
+| `BOARD_URL` | `http://<보드 IP>` (카메라 영상용) |
+| `MUSIC_DIR` | 비워 둬도 된다(대시보드에서 고른다) |
+
+### 5. 동작 확인
+
+1. 노트북에서 agent 실행(아래 [평소 사용](#평소-사용)) → 대시보드 창이 뜬다.
+2. 위쪽 표시가 **브로커·보드·카메라·플레이어** 모두 초록이면 연결 완료.
+3. [폴더 선택]으로 음악 폴더를 고르고, 카메라 앞에서 👌 → 음악이 재생되면 끝.
+4. (Supabase를 설정했다면) Table Editor > `gesture_commands`에 방금 명령이 쌓인다.
+
+## 평소 사용
+
+1. **파이와 보드 전원을 켠다.** 둘 다 알아서 와이파이에 붙고 서비스가 시작된다(1~2분).
+2. **노트북에서 agent 실행**:
+   ```powershell
+   conda activate air-dj
+   cd agent
+   python -m air_dj_agent
+   ```
+3. 끝낼 때는 **대시보드 창을 닫는다**(또는 터미널에서 Ctrl+C). agent와 음악이 같이 꺼진다.
+   파이와 보드는 켜 둬도 되고 그냥 전원을 빼도 된다.
+
 - 음악은 정지 상태로 시작한다. 👌로 재생.
+- 창을 닫아도 음악을 계속 틀고 싶으면 `agent/.env`에 `OPEN_BROWSER=tab`(일반 브라우저 탭, `http://localhost:8080`). 이때는 Ctrl+C로 끈다.
 
 ### 음악 폴더
 
@@ -79,29 +166,29 @@ python -m air_dj_agent
 - 카메라 영상 + 손 박스, 지금 인식된 제스처(최근 1초 기준, ●●●○○가 3개 차면 명령), 재생 중인 곡 정보, 최근 명령, 연결 상태.
 - 보드 카메라 영상은 한 화면에만 나온다. 보드 자체 미리보기(`http://<보드 IP>`)와 동시에 열지 않는다.
 
-## 라즈베리파이 5 (브로커 + receiver)
+## 코드나 설정을 바꿨을 때
 
-Raspberry Pi OS Lite 64-bit, Docker 설치 후:
-```bash
-git clone https://github.com/kimsegwang/air-dj.git ~/air-dj
-cd ~/air-dj
-cp .env.example .env          # SUPABASE_URL, SUPABASE_SECRET_KEY 채우기 (비워 두면 기록만 안 남는다)
-docker compose up -d --build
-docker compose logs -f receiver
-```
-- 재부팅해도 자동으로 다시 뜬다.
-- `pi/` 코드를 바꾼 뒤 반영: `git pull && docker compose up -d --build receiver`
-- Supabase 테이블은 `supabase/schema.sql`을 대시보드 SQL Editor에서 한 번 실행해 만든다.
+| 바꾼 것 | 반영 방법 |
+|---|---|
+| `pi/` (receiver, 디바운스 규칙) | 파이에서 `cd ~/air-dj && git pull && docker compose up -d --build receiver` |
+| `agent/` (플레이어, 대시보드) | 노트북에서 agent를 껐다 켠다 |
+| `firmware/` 또는 보드 설정(와이파이, 파이 IP) | `idf.py menuconfig` → `idf.py build` → `idf.py -p COMx flash` |
+| 파이 IP가 바뀜 | 보드 menuconfig의 브로커 URI와 `agent/.env`의 `MQTT_HOST`를 둘 다 바꾼다 |
 
-## 보드 (XIAO ESP32S3 Sense)
-
-ESP-IDF v5.5.6. Wi-Fi와 브로커 주소(`mqtt://<파이 IP>:1883`)는 `idf.py menuconfig` > air-dj에서 설정한다(`sdkconfig`에만 저장, 커밋하지 않음).
-```powershell
-cd firmware
-idf.py build
-idf.py -p COMx flash
-```
 자세한 개발 규칙과 실측 메모는 [CLAUDE.md](CLAUDE.md).
+
+## 문제 해결
+
+대시보드 위쪽 표시로 어디가 끊겼는지 본다.
+
+| 증상 | 확인할 것 |
+|---|---|
+| **브로커** 빨강 | 파이 전원/와이파이, `agent/.env`의 `MQTT_HOST`가 파이 IP인지, 파이에서 `docker compose ps` |
+| **보드** 빨강 | 보드 전원, 보드 와이파이(2.4GHz), 보드 menuconfig의 브로커 URI가 파이 IP인지(시리얼 로그 확인) |
+| **카메라** 빨강 | `agent/.env`의 `BOARD_URL`, 보드 미리보기가 켜져 있는지, 다른 브라우저 창이 영상을 잡고 있지 않은지 |
+| **플레이어** 빨강 | `MPV_PATH`가 맞는지, agent 터미널의 오류 메시지 |
+| 다 초록인데 명령이 안 나감 | 배경을 깔끔하게, 손바닥을 카메라로, 50cm~1m. 같은 명령 반복은 손을 화면 밖으로 1초 뺐다가 |
+| 소리가 안 남 | 재생목록이 비었는지(대시보드 "지금 재생"), 윈도우 볼륨, 👌로 재생했는지 |
 
 ## 보안 주의
 
