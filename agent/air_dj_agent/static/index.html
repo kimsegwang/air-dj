@@ -28,7 +28,10 @@
   #toast.show { opacity:1; transform:translate(-50%,-50%) scale(1); }
   #camfoot { display:flex; justify-content:space-between; color:var(--dim); font-size:12px; margin-top:8px; font-family:Consolas,monospace; }
 
-  #gesture { display:flex; align-items:center; gap:16px; }
+  #gesture { display:flex; align-items:center; gap:16px; transition:opacity .2s; }
+  #gesture.dim { opacity:.45; }
+  #gvotes { font-size:13px; color:var(--dim); margin-top:2px; letter-spacing:2px; }
+  #gvotes b { color:var(--accent); font-weight:400; }
   #gemoji { font-size:56px; width:72px; text-align:center; }
   #glabel { font-size:22px; font-weight:600; }
   #gmap { color:var(--accent); font-size:14px; margin-top:2px; min-height:18px; }
@@ -109,6 +112,7 @@
         <div style="flex:1">
           <div id="glabel">대기 중</div>
           <div id="gmap"></div>
+          <div id="gvotes" title="최근 5프레임 중 이 제스처가 나온 수. 3이면 명령이 나간다"></div>
           <div class="bars">
             <div class="bar"><span>분류</span><div class="track"><div class="fill" id="gscore"></div></div><span id="gscoret">-</span></div>
             <div class="bar"><span>검출</span><div class="track"><div class="fill" id="gdet"></div></div><span id="gdett">-</span></div>
@@ -175,10 +179,10 @@ async function tickBoard() {
       ctx.lineWidth = 3; ctx.font = "600 18px Segoe UI, sans-serif";
       for (const hand of (r.hands || [])) {
         const [x1, y1, x2, y2] = hand.box;
-        const mapped = MAPPING[hand.label];
-        ctx.strokeStyle = mapped ? "#3ddc97" : "#f5a524";
+        // 라벨은 프레임마다 바뀌는 원본 대신 인식 패널과 같은 평활화 결과를 쓴다
+        ctx.strokeStyle = !shown ? "#8b929c" : MAPPING[shown] ? "#3ddc97" : "#f5a524";
         ctx.strokeRect(ox + x1*s, oy + y1*s, (x2-x1)*s, (y2-y1)*s);
-        const t = `${EMOJI[hand.label] || ""} ${hand.label} ${hand.score.toFixed(2)}`;
+        const t = shown ? `${EMOJI[shown] || ""} ${shown}` : "손";
         ctx.fillStyle = "rgba(0,0,0,.65)";
         ctx.fillRect(ox + x1*s, oy + y1*s - 26, ctx.measureText(t).width + 10, 26);
         ctx.fillStyle = ctx.strokeStyle; ctx.fillText(t, ox + x1*s + 5, oy + y1*s - 7);
@@ -191,6 +195,7 @@ async function tickBoard() {
 }
 
 let lastCmdAt;  // undefined = 아직 첫 응답 전
+let shown = null;  // 평활화된 제스처 라벨 (카메라 박스에도 쓴다)
 function toast(cmd) {
   const [icon, name] = CMD[cmd] || ["", cmd];
   $("toast").textContent = `${icon} ${name}`;
@@ -205,13 +210,18 @@ async function tickState() {
     const p = st.player, g = st.gesture, fresh = st.gesture_age != null && st.gesture_age < 2;
     pill("p-mqtt", st.mqtt); pill("p-board", fresh); pill("p-cam", camOk); pill("p-mpv", p.available);
 
-    // 인식
-    const label = fresh && g ? g.label : null;
-    $("gemoji").textContent = label ? (EMOJI[label] || "✋") : "·";
-    $("glabel").textContent = !label ? "보드 신호 없음" : label === "no_hand" ? "손 없음" : label;
+    // 인식: 프레임마다가 아니라 최근 5프레임 기준 (agent state.smooth_gesture)
+    const sm = fresh ? st.smoothed : { state:"none" };
+    const label = sm.state === "gesture" ? sm.label : null;
+    shown = label;
+    $("gesture").classList.toggle("dim", sm.state !== "gesture");
+    $("gemoji").textContent = label ? (EMOJI[label] || "✋") : sm.state === "hand" ? "✋" : "·";
+    $("glabel").textContent = { gesture:label, hand:"손 인식됨", no_hand:"손 없음", none:"보드 신호 없음" }[sm.state];
     const cmd = label && MAPPING[label];
     $("gmap").textContent = cmd ? `→ ${CMD[cmd][0]} ${CMD[cmd][1]}` : "";
-    const sc = label && label !== "no_hand" ? g.score : 0, dt = label ? g.det : 0;
+    const votes = cmd ? sm.votes : 0, win = sm.window || 5;
+    $("gvotes").innerHTML = votes ? "<b>" + "●".repeat(votes) + "</b>" + "○".repeat(Math.max(win - votes, 0)) : "";
+    const sc = label ? sm.score : 0, dt = sm.det || 0;
     $("gscore").style.width = `${sc*100}%`; $("gscoret").textContent = sc ? sc.toFixed(2) : "-";
     $("gdet").style.width = `${dt*100}%`; $("gdett").textContent = dt ? dt.toFixed(2) : "-";
     for (const l of Object.keys(MAPPING)) $("lg-" + l).classList.toggle("active", l === label);

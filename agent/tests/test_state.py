@@ -1,4 +1,36 @@
-from air_dj_agent.state import DashboardState, now_playing
+from air_dj_agent.state import DashboardState, now_playing, smooth_gesture
+
+
+def g(label, score=0.99, det=0.8):
+    return {"label": label, "score": score, "det": 0.0 if label == "no_hand" else det}
+
+
+def test_smooth_interleaved_no_gesture_shows_gesture():
+    # 실측: one과 no_gesture가 번갈아 나온다 → 화면은 계속 one
+    for frames in ([g("one"), g("no_gesture"), g("one"), g("no_gesture"), g("no_gesture")],
+                   [g("no_gesture"), g("one"), g("no_gesture"), g("one"), g("no_gesture")]):
+        sm = smooth_gesture(frames)
+        assert sm["state"] == "gesture" and sm["label"] == "one" and sm["votes"] == 2
+
+
+def test_smooth_single_frame_is_not_enough():
+    sm = smooth_gesture([g("no_gesture"), g("no_gesture"), g("five"), g("no_gesture"), g("no_gesture")])
+    assert sm["state"] == "hand" and sm["votes"] == 1
+
+
+def test_smooth_low_score_does_not_count():
+    assert smooth_gesture([g("five", 0.5)] * 5)["state"] == "hand"
+
+
+def test_smooth_no_hand_majority():
+    assert smooth_gesture([g("no_hand"), g("no_hand"), g("no_hand"), g("one"), g("one")])["state"] == "no_hand"
+    assert smooth_gesture([])["state"] == "none"
+
+
+def test_smooth_tie_prefers_latest():
+    sm = smooth_gesture([g("one"), g("one"), g("two"), g("two"), g("no_gesture")])
+    assert sm["label"] in ("one", "two")
+    assert smooth_gesture([g("one"), g("one"), g("no_gesture"), g("two"), g("two")])["label"] == "two"
 
 
 def test_now_playing_prefers_metadata_case_insensitive():
