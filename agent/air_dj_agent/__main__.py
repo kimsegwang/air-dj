@@ -15,6 +15,7 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
+from air_dj_agent.appwindow import open_app_window
 from air_dj_agent.commands import MPV_COMMANDS, parse_command
 from air_dj_agent.dashboard import start_dashboard
 from air_dj_agent.library import SETTINGS_FILE, MusicLibrary, initial_music_dir
@@ -57,8 +58,6 @@ def main() -> None:
     state = DashboardState()
     dashboard_port = int(os.environ.get("DASHBOARD_PORT", "8080"))
     dashboard = start_dashboard(state, mpv, MusicLibrary(mpv), os.environ.get("BOARD_URL", ""), dashboard_port)
-    if os.environ.get("OPEN_BROWSER", "1") == "1":
-        webbrowser.open(f"http://localhost:{dashboard_port}/")
 
     def on_connect(client, userdata, flags, reason_code, properties):
         log.info("MQTT connected to %s:%d (%s), subscribing %s, %s", host, port, reason_code, commands_topic, gesture_topic)
@@ -98,6 +97,15 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
+
+    # app: 앱 창을 닫으면 agent와 음악도 끝난다 / tab: 브라우저 탭(닫아도 계속) / 0: 안 연다
+    url = f"http://localhost:{dashboard_port}/"
+    mode = os.environ.get("OPEN_BROWSER", "app")
+    if mode == "app" and not open_app_window(url, on_closed=client.disconnect):
+        log.warning("Edge를 찾지 못함 → 브라우저 탭으로 연다 (닫아도 agent는 계속, 끄려면 Ctrl+C)")
+        mode = "tab"
+    if mode in ("tab", "1"):
+        webbrowser.open(url)
 
     log.info("broker=%s:%d, music=%s", host, port, music_dir or "(없음)")
     client.connect_async(host, port)

@@ -42,7 +42,8 @@ conda activate air-dj
 cd agent
 python -m air_dj_agent
 ```
-- 브라우저에 대시보드(`http://localhost:8080`)가 자동으로 열린다. 종료는 터미널에서 Ctrl+C (mpv도 같이 꺼진다).
+- 대시보드가 주소창 없는 앱 창으로 열린다(Edge). **이 창을 닫으면 agent와 음악도 같이 꺼진다.** 터미널에서 Ctrl+C로 꺼도 된다.
+- 창을 닫아도 음악을 계속 틀고 싶으면 `agent/.env`에 `OPEN_BROWSER=tab`(일반 브라우저 탭, `http://localhost:8080`).
 - 음악은 정지 상태로 시작한다. 👌로 재생.
 
 ### 음악 폴더

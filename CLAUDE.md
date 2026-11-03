@@ -123,6 +123,10 @@ python tools/serial_read.py --port COMx --seconds 15
 - 음악 폴더는 대시보드 [폴더 선택](agent가 tkinter 폴더 창을 띄움) → mpv `loadfile <폴더> replace` → `agent/settings.json`(gitignore)에 저장.
   우선순위 settings.json → `MUSIC_DIR` → 없음(빈 재생목록). 폴더 교체 시 재생/정지 상태 유지, 비오디오 파일 제외는 실제 mpv로 확인.
 - 실행: `conda activate air-dj; cd agent; python -m air_dj_agent` (종료는 Ctrl+C → mpv도 같이 종료)
+- 대시보드는 기본으로 Edge 앱 창(`--app`, 전용 프로필 `%LOCALAPPDATA%\air-dj\edge-app-profile`)으로 띄우고,
+  그 프로세스가 끝나면(창 X) agent도 종료한다(`OPEN_BROWSER=app|tab|0`). 띄운 지 3초 안에 끝나면 기존 창에 넘긴 것으로 보고 무시.
+- mpv는 Job Object(KILL_ON_JOB_CLOSE)로 agent에 묶는다 → 터미널 X/강제 종료에도 mpv가 남지 않음.
+  확인(2026-11-03): 앱 창 WM_CLOSE → agent code 0 + mpv 종료, agent taskkill /F → mpv 종료.
 - 대시보드: agent가 `http://localhost:8080/`을 띄우고 브라우저를 연다(127.0.0.1 전용, 표준 라이브러리 http.server).
   카메라는 브라우저가 보드 `:81/stream`을 직접 받고, 손 박스는 보드 `/result`에 CORS 헤더가 없어 agent `/api/board`가 중계한다.
   보드 스트림 서버는 한 번에 한 접속만 받는다(보드 미리보기 페이지와 동시에 열면 번갈아 끊긴다).

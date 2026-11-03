@@ -14,6 +14,8 @@ import threading
 import time
 from typing import Callable
 
+from air_dj_agent.winjob import kill_with_agent
+
 log = logging.getLogger(__name__)
 
 
@@ -78,6 +80,7 @@ class Mpv:
             args = mpv_args(self._mpv_path, self._pipe, self.music_dir)
             log.info("mpv 시작: %s", " ".join(args))
             self._proc = subprocess.Popen(args)
+            kill_with_agent(self._proc)  # 터미널을 X로 닫아도 mpv가 남지 않게
 
     def load_dir(self, music_dir: str) -> bool:
         """재생목록을 폴더로 바꾼다. 재생/정지 상태는 그대로 유지된다(pause 속성은 파일이 바뀌어도 남는다)."""
