@@ -3,6 +3,9 @@
 *.env
 !.env.example
 
+# 노트북 agent 개인 설정 (대시보드에서 고른 음악 폴더)
+agent/settings.json
+
 # ESP-IDF
 firmware/build/
 firmware/managed_components/

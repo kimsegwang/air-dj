@@ -17,8 +17,9 @@ from typing import Callable
 log = logging.getLogger(__name__)
 
 
-def mpv_args(mpv_path: str, pipe: str, music_dir: str) -> list[str]:
-    return [
+def mpv_args(mpv_path: str, pipe: str, music_dir: str | None) -> list[str]:
+    """music_dir가 없으면 빈 재생목록으로 띄운다 (대시보드에서 폴더를 고른다)."""
+    args = [
         mpv_path,
         f"--input-ipc-server={pipe}",
         "--idle=yes",                      # 재생목록이 끝나거나 비어도 종료하지 않는다
@@ -29,9 +30,9 @@ def mpv_args(mpv_path: str, pipe: str, music_dir: str) -> list[str]:
         "--force-window=no",
         "--terminal=no",
         "--directory-mode=recursive",
-        "--directory-filter-types=audio",
-        music_dir,
+        "--directory-filter-types=audio",  # 폴더 안 오디오 파일만 (loadfile로 폴더를 바꿀 때도 적용)
     ]
+    return args + [music_dir] if music_dir else args
 
 
 def read_replies(read: Callable[[int], bytes], request_ids: set[int]) -> dict[int, dict]:
@@ -61,9 +62,10 @@ class Mpv:
     실패해도 예외를 던지지 않는다 (agent가 죽으면 안 됨).
     """
 
-    def __init__(self, mpv_path: str, pipe: str, music_dir: str, start_timeout_s: float = 5.0):
-        self._args = mpv_args(mpv_path, pipe, music_dir)
+    def __init__(self, mpv_path: str, pipe: str, music_dir: str | None, start_timeout_s: float = 5.0):
+        self._mpv_path = mpv_path
         self._pipe = pipe
+        self.music_dir = music_dir  # mpv가 다시 뜰 때 이 폴더로 시작한다
         self._start_timeout = start_timeout_s
         self._proc: subprocess.Popen | None = None
         self._start_lock = threading.Lock()
@@ -73,8 +75,16 @@ class Mpv:
         with self._start_lock:
             if self._proc is not None and self._proc.poll() is None:
                 return
-            log.info("mpv 시작: %s", " ".join(self._args))
-            self._proc = subprocess.Popen(self._args)
+            args = mpv_args(self._mpv_path, self._pipe, self.music_dir)
+            log.info("mpv 시작: %s", " ".join(args))
+            self._proc = subprocess.Popen(args)
+
+    def load_dir(self, music_dir: str) -> bool:
+        """재생목록을 폴더로 바꾼다. 재생/정지 상태는 그대로 유지된다(pause 속성은 파일이 바뀌어도 남는다)."""
+        ok = self.command(["loadfile", music_dir, "replace"])
+        if ok:
+            self.music_dir = music_dir
+        return ok
 
     def stop(self) -> None:
         if self._proc is None or self._proc.poll() is not None:

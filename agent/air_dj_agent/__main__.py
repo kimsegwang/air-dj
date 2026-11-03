@@ -2,7 +2,7 @@
 
 설정은 agent/.env (agent/.env.example 참고):
     MQTT_HOST, MQTT_PORT, COMMANDS_TOPIC, GESTURE_TOPIC
-    MUSIC_DIR, MPV_PATH, MPV_PIPE
+    MUSIC_DIR(처음 기본값, 대시보드에서 고르면 agent/settings.json이 우선), MPV_PATH, MPV_PIPE
     BOARD_URL, DASHBOARD_PORT, OPEN_BROWSER
 """
 
@@ -17,6 +17,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from air_dj_agent.commands import MPV_COMMANDS, parse_command
 from air_dj_agent.dashboard import start_dashboard
+from air_dj_agent.library import SETTINGS_FILE, MusicLibrary, initial_music_dir
 from air_dj_agent.mpv import Mpv
 from air_dj_agent.state import DashboardState
 
@@ -42,9 +43,9 @@ def main() -> None:
     port = int(os.environ.get("MQTT_PORT", "1883"))
     commands_topic = os.environ.get("COMMANDS_TOPIC", "air-dj/commands")
     gesture_topic = os.environ.get("GESTURE_TOPIC", "air-dj/gesture")
-    music_dir = os.environ.get("MUSIC_DIR", "")
-    if not music_dir or not Path(music_dir).is_dir():
-        raise SystemExit(f"MUSIC_DIR가 없거나 폴더가 아님: {music_dir!r} (agent/.env 확인)")
+    music_dir = initial_music_dir(SETTINGS_FILE, os.environ.get("MUSIC_DIR"))
+    if music_dir is None:
+        log.warning("음악 폴더가 없음 → 대시보드에서 [폴더 선택]으로 고른다")
 
     mpv = Mpv(
         os.environ.get("MPV_PATH", "mpv"),
@@ -55,7 +56,7 @@ def main() -> None:
 
     state = DashboardState()
     dashboard_port = int(os.environ.get("DASHBOARD_PORT", "8080"))
-    dashboard = start_dashboard(state, mpv, os.environ.get("BOARD_URL", ""), dashboard_port)
+    dashboard = start_dashboard(state, mpv, MusicLibrary(mpv), os.environ.get("BOARD_URL", ""), dashboard_port)
     if os.environ.get("OPEN_BROWSER", "1") == "1":
         webbrowser.open(f"http://localhost:{dashboard_port}/")
 
@@ -98,7 +99,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    log.info("broker=%s:%d, music=%s", host, port, music_dir)
+    log.info("broker=%s:%d, music=%s", host, port, music_dir or "(없음)")
     client.connect_async(host, port)
     try:
         client.loop_forever(retry_first_connection=True)

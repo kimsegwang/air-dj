@@ -41,3 +41,8 @@ def test_mpv_args_ipc_and_music_dir():
     args = mpv_args("mpv", r"\\.\pipe\x", r"C:\music")
     assert args[0] == "mpv" and args[-1] == r"C:\music"
     assert r"--input-ipc-server=\\.\pipe\x" in args
+
+
+def test_mpv_args_without_music_dir_starts_empty():
+    args = mpv_args("mpv", r"\\.\pipe\x", None)
+    assert args[-1].startswith("--") and "--idle=yes" in args

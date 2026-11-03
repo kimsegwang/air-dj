@@ -52,6 +52,14 @@
   #upcoming li { padding:3px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #upcoming li::before { content:"↳ "; }
 
+  #library { display:flex; align-items:center; gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:13px; }
+  #mdir { flex:1; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  button { background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px;
+           font:inherit; cursor:pointer; white-space:nowrap; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:wait; }
+  #libmsg { font-size:12px; color:var(--warn); min-height:16px; margin-top:6px; }
+
   #history { list-style:none; margin:0; padding:0; }
   #history li { display:grid; grid-template-columns:28px 1fr auto; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
   #history li:last-child { border-bottom:none; }
@@ -103,6 +111,12 @@
         <div id="pos"></div>
       </div>
       <ul id="upcoming"></ul>
+      <div id="library">
+        <span>📁</span><span id="mdir">-</span>
+        <button id="bchoose" title="노트북에 폴더 선택 창이 뜹니다">폴더 선택</button>
+        <button id="breload" title="폴더에 곡을 추가/삭제한 뒤 다시 읽습니다 (처음 곡부터)">새로고침</button>
+      </div>
+      <div id="libmsg"></div>
     </section>
 
     <section class="card">
@@ -227,7 +241,10 @@ async function tickState() {
     for (const l of Object.keys(MAPPING)) $("lg-" + l).classList.toggle("active", l === label);
 
     // 재생
-    $("title").textContent = !p.available ? "플레이어 연결 안 됨" : (p.title || "음악 폴더가 비어 있음");
+    $("title").textContent = !p.available ? "플레이어 연결 안 됨"
+      : p.title || (st.music_dir ? "폴더에 음악 파일이 없음" : "음악 폴더를 선택하세요");
+    $("mdir").textContent = st.music_dir || "선택 안 됨";
+    $("mdir").title = st.music_dir || "";
     $("artist").textContent = [p.artist, p.album].filter(Boolean).join(" · ");
     $("pfill").style.width = p.duration ? `${(p.position || 0) / p.duration * 100}%` : "0";
     $("tpos").textContent = fmt(p.position); $("tdur").textContent = fmt(p.duration);
@@ -256,6 +273,22 @@ async function tickState() {
   } catch (e) { pill("p-mpv", false); pill("p-mqtt", false); }
   setTimeout(tickState, 400);
 }
+
+// 음악 폴더: 선택 창은 브라우저가 아니라 노트북(agent)이 띄운다
+async function libraryAction(path, busyText) {
+  const buttons = [$("bchoose"), $("breload")];
+  buttons.forEach(b => b.disabled = true);
+  $("libmsg").textContent = busyText;
+  try {
+    const r = await (await fetch(path, { method:"POST" })).json();
+    $("libmsg").textContent = r.ok ? "" : r.error;
+  } catch (e) {
+    $("libmsg").textContent = "agent에 연결할 수 없습니다";
+  }
+  buttons.forEach(b => b.disabled = false);
+}
+$("bchoose").onclick = () => libraryAction("/api/music/choose", "노트북 화면의 폴더 선택 창에서 고르세요…");
+$("breload").onclick = () => libraryAction("/api/music/reload", "다시 읽는 중…");
 
 tickBoard(); tickState();
 </script>

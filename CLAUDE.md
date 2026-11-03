@@ -120,6 +120,8 @@ python tools/serial_read.py --port COMx --seconds 15
 - 브로커 주소(파이 IP), 음악 폴더 경로 등은 `agent/.env`(gitignore).
 - mpv: `winget install shinchiro.mpv` → `C:\Program Files\MPV Player\mpv.exe`(PATH에 없음, `MPV_PATH`로 지정). 음악 폴더 `C:\Users\jjjkk\Desktop\air-dj-music`.
 - mpv는 정지 상태로 시작한다(ok 제스처로 재생). 폴더 안 오디오 파일만 하위 폴더까지 재생목록에 넣고 반복한다.
+- 음악 폴더는 대시보드 [폴더 선택](agent가 tkinter 폴더 창을 띄움) → mpv `loadfile <폴더> replace` → `agent/settings.json`(gitignore)에 저장.
+  우선순위 settings.json → `MUSIC_DIR` → 없음(빈 재생목록). 폴더 교체 시 재생/정지 상태 유지, 비오디오 파일 제외는 실제 mpv로 확인.
 - 실행: `conda activate air-dj; cd agent; python -m air_dj_agent` (종료는 Ctrl+C → mpv도 같이 종료)
 - 대시보드: agent가 `http://localhost:8080/`을 띄우고 브라우저를 연다(127.0.0.1 전용, 표준 라이브러리 http.server).
   카메라는 브라우저가 보드 `:81/stream`을 직접 받고, 손 박스는 보드 `/result`에 CORS 헤더가 없어 agent `/api/board`가 중계한다.
