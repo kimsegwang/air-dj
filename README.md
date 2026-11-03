@@ -33,6 +33,24 @@
 - 참고: 음악이 노트북에서 나오므로, 기능만 보면 노트북이 브로커와 receiver까지 맡아도 동작한다. 파이를 따로 둔 덕분에
   노트북이 꺼져 있어도 기록이 쌓이고, 재생 장치를 바꿔도(예: 다른 스피커 기기) 파이 쪽은 그대로 쓸 수 있다.
 
+## 사용한 모델
+
+직접 학습한 모델은 없다. Espressif가 ESP32-S3용으로 배포하는 **사전 학습 int8 모델 두 개**를 [ESP-DL](https://github.com/espressif/esp-dl)로 보드에서 실행한다.
+모델 파일은 ESP-IDF 컴포넌트 매니저가 내려받아 펌웨어 플래시(rodata)에 함께 굽는다(레포에는 없음).
+
+| 단계 | 컴포넌트 (버전) | 모델 | 입력 | 크기 |
+|---|---|---|---|---|
+| ① 손 검출 | `espressif/hand_detect` 0.2.1 | `espdet_pico_224_224_hand` (ESPDet-Pico 검출기) | 224×224 RGB | 약 0.5MB |
+| ② 제스처 분류 | `espressif/hand_gesture_recognition` 0.2.1 | `mobilenetv2_0_5_128_128_gesture` (MobileNetV2 0.5×) | 128×128 RGB (손 영역을 잘라서) | 약 0.8MB |
+
+- 추론 프레임워크: `espressif/esp-dl` 3.3.14 / 카메라: `espressif/esp32-camera` 2.1.8 (OV3660, QVGA 320×240 JPEG)
+- 처리 흐름: JPEG 디코딩 → ① 손 위치(박스)와 검출 점수 → 손마다 잘라서 ② 제스처 분류 → 검출 점수가 가장 높은 손 하나를 MQTT로 발행
+- 분류 라벨(11개): `one` `two` `three` `four` `five` `like` `ok` `call` `dislike` `no_gesture`, 손이 없으면 `no_hand`.
+  이 중 6개를 명령에 쓴다(아래 표). `no_gesture`는 "손은 보이지만 아는 제스처가 아님"이다.
+- 실측(실내, ESP32-S3 240MHz): 프레임당 약 185ms(약 5fps) = 디코딩 13 + 손 검출 171 + 분류 수 ms. 모델이 PSRAM 약 0.75MB 사용.
+- 정확도 메모: ok/five/one/two/like는 안정적이고, dislike는 손 검출 점수가 낮아 느리다. 배경이 복잡하면 `no_gesture`가 많이 섞인다.
+- 모델 정보 출처: `firmware/managed_components/espressif__hand_detect/README.md`, `.../espressif__hand_gesture_recognition/README.md` (빌드 후 생성)
+
 ## 제스처
 
 | 제스처 | 명령 |
