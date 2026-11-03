@@ -9,7 +9,8 @@ from enum import Enum
 
 
 class Command(str, Enum):
-    PLAY_PAUSE = "play_pause"
+    PLAY = "play"
+    PAUSE = "pause"
     NEXT = "next"
     PREV = "prev"
     VOLUME_UP = "volume_up"
@@ -17,7 +18,8 @@ class Command(str, Enum):
 
 
 DEFAULT_MAPPING: dict[str, Command] = {
-    "five": Command.PLAY_PAUSE,
+    "ok": Command.PLAY,
+    "five": Command.PAUSE,  # 모델에 fist 라벨이 없어서 손바닥을 정지로 쓴다
     "one": Command.NEXT,
     "two": Command.PREV,
     "like": Command.VOLUME_UP,

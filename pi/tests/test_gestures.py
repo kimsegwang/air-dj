@@ -15,7 +15,12 @@ def run(frames, config=CFG):
 
 def test_fires_after_min_frames():
     frames = [("five", 0.9, 0.0), ("five", 0.9, 0.1), ("five", 0.9, 0.2)]
-    assert run(frames) == [(Command.PLAY_PAUSE, 0.2)]
+    assert run(frames) == [(Command.PAUSE, 0.2)]
+
+
+def test_ok_plays():
+    frames = [("ok", 0.9, 0.0), ("ok", 0.9, 0.1), ("ok", 0.9, 0.2)]
+    assert run(frames) == [(Command.PLAY, 0.2)]
 
 
 def test_too_few_frames_does_nothing():
@@ -38,7 +43,7 @@ def test_low_score_frame_breaks_the_streak():
 
 
 def test_unmapped_labels_never_fire():
-    for label in ("no_hand", "no_gesture", "ok", "call", "three"):
+    for label in ("no_hand", "no_gesture", "call", "three", "four"):
         assert run([(label, 0.99, i * 0.1) for i in range(10)]) == []
 
 

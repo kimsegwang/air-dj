@@ -25,15 +25,15 @@ def g(ts):
 def test_safe_repository_passes_through():
     fake = FakeRepository()
     repo = SafeRepository(fake)
-    assert repo.save_command(CommandRecord("play_pause", "five", 1.0)) is True
+    assert repo.save_command(CommandRecord("pause", "five", 1.0)) is True
     assert repo.save_gestures([g(1.0)]) is True
-    assert fake.commands == [CommandRecord("play_pause", "five", 1.0)]
+    assert fake.commands == [CommandRecord("pause", "five", 1.0)]
     assert fake.gesture_batches == [[g(1.0)]]
 
 
 def test_safe_repository_swallows_errors(caplog):
     repo = SafeRepository(FakeRepository(fail=True))
-    assert repo.save_command(CommandRecord("play_pause", "five", 1.0)) is False
+    assert repo.save_command(CommandRecord("pause", "five", 1.0)) is False
     assert repo.save_gestures([g(1.0)]) is False
     assert "저장 실패" in caplog.text
 
