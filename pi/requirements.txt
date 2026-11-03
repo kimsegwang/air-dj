@@ -1,1 +1,2 @@
 pytest>=8
+pyserial>=3.5  # tools/serial_read.py (노트북 전용)

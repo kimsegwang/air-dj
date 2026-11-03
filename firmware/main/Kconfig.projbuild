@@ -1,0 +1,27 @@
+menu "air-dj"
+
+    config AIRDJ_WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+        help
+            비워 두면 Wi-Fi를 켜지 않는다. 값은 sdkconfig에만 저장되고 커밋하지 않는다.
+
+    config AIRDJ_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config AIRDJ_PREVIEW
+        bool "Enable web preview (dev only)"
+        default y
+        help
+            http://<보드IP>/ 에서 카메라 영상과 인식 결과를 본다. 영상 스트림은 포트 81.
+
+    config AIRDJ_CAMERA_VFLIP
+        bool "Camera vertical flip"
+        default n
+
+    config AIRDJ_CAMERA_HMIRROR
+        bool "Camera horizontal mirror"
+        default n
+
+endmenu
