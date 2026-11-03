@@ -1,0 +1,17 @@
+# 커밋용 기본값. 비밀값(Wi-Fi, 브로커 주소)은 넣지 않는다 → menuconfig로 sdkconfig에만 저장.
+CONFIG_IDF_TARGET="esp32s3"
+
+# XIAO ESP32S3 Sense: Flash 8MB, PSRAM 8MB Octal
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# esp-dl 지연시간 표가 이 설정 기준으로 측정됨 (models/hand_detect README)
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# 모델 2개(약 1.3MB)가 앱 이미지(rodata)에 들어가므로 앱 파티션을 키운다
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
